@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>XYZ ↔ Lab ↔ HLS (sRGB/D65) — интерактивный конвертер</title>
+  <style>
+    :root{
+      --bg:#0b0e14; --card:#131826; --muted:#8a98b3; --accent:#5ae3b6; --warn:#ffb86b; --bad:#ff6b6b;
+      --radius:18px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;background:linear-gradient(180deg,#0b0e14,#0e1627);color:#e7ecf3}
+    .wrap{max-width:1100px;margin-inline:auto;padding:24px}
+    h1{font-size:26px;margin:0 0 6px;font-weight:800}
+    .title-box {
+      background: lavender;
+      color: black;
+      font-size: 28px;
+      font-weight: 800;
+      text-align: center;
+      padding: 14px;
+      border-radius: 18px;
+      margin-bottom: 20px;
+    }
+    .sub{color:var(--muted);margin-bottom:18px}
+    .grid{display:grid;gap:16px}
+    @media(min-width:960px){.grid{grid-template-columns:1.2fr 1fr}}
+    .card{background:linear-gradient(180deg,#131826,#0f1422);border:1px solid #1f2a44;border-radius:var(--radius);padding:16px;box-shadow:0 8px 24px rgba(0,0,0,.35)}
+    .row{display:flex;gap:10px;align-items:center}
+    .row + .row{margin-top:8px}
+    .group{display:grid;grid-template-columns:70px 1fr 88px;gap:8px;align-items:center}
+    .group input[type=range]{width:100%}
+    .group input[type=number]{width:100%;padding:8px;border-radius:10px;border:1px solid #2a3556;background:#0c1324;color:#e7ecf3}
+    .group input[type=number]:focus{outline:2px solid #2a7fff}
+    label{color:#9fb0cf}
+    .picker{display:flex;gap:12px;align-items:center}
+    .swatch{width:64px;height:64px;border-radius:14px;border:1px solid #29365a;box-shadow:inset 0 0 0 1px rgba(255,255,255,.1)}
+    .big-preview{height:190px;border-radius:var(--radius);border:1px solid #24304f;box-shadow:inset 0 0 0 1px rgba(255,255,255,.06)}
+    .fields{display:grid;gap:8px}
+    .panel-title{font-weight:700;margin-bottom:10px;letter-spacing:.2px}
+    .muted{color:var(--muted)}
+    .warn{background:#1a140b;border:1px dashed #805c2a;color:#ffd79f;padding:10px;border-radius:12px}
+    .bad{color:var(--bad)}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+    button{padding:8px 12px;background:#182036;border:1px solid #2a3556;color:#e7ecf3;border-radius:12px;cursor:pointer}
+    button:hover{background:#1b2642}
+    .kbd{font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;background:#101523;border:1px solid #2a3556;border-radius:8px;padding:4px 6px}
+    .editable-input {
+      background: transparent;
+      border: 1px solid transparent;
+      color: inherit;
+      font-family: inherit;
+      padding: 2px 6px;
+      border-radius: 6px;
+      min-width: 80px;
+      cursor: pointer;
+    }
+    .editable-input:hover {
+      background: #1a223b;
+      border-color: #2a3556;
+    }
+    .editable-input:focus {
+      outline: 2px solid #2a7fff;
+      background: #0c1324;
+      border-color: #2a3556;
+    }
+    .mini{font-size:12px}
+    .foot{margin-top:8px;color:#93a5c7}
+    .link{color:#86e2ff;text-decoration:none}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;background:#0f1a30;border:1px solid #27365c;color:#9bb0d6}
+    .palette {
+      margin-top: 30px;
+      display: grid;
+      grid-template-columns: repeat(20, 1fr);
+      gap: 4px;
+    }
+    .palette div {
+      height: 20px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: transform 0.1s ease;
+    }
+    .palette div:hover {
+      transform: scale(1.1);
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title-box">Конвертер цветов</div>
+
+    <h1>XYZ ↔ Lab ↔ HLS</h1>
+    <div class="sub">Конвертер цветов на базе <span class="pill">sRGB / D65</span>. Изменяйте любой параметр — другие модели пересчитаются автоматически. Предупреждаем, когда для показа на экране приходится <em>обрезать</em> значения (вне гаммы sRGB).</div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="panel-title">Превью и быстрый выбор</div>
+        <div class="picker">
+          <input id="colorHex" type="color" value="#4ea6ff" aria-label="HEX color picker" />
+          <div>
+            <div class="row" style="gap:8px">
+              <span class="muted">HEX</span>
+              <input id="hexInput" class="editable-input" value="#4EA6FF" />
+              <button id="copyHex">Скопировать</button>
+            </div>
+            <div class="row mini muted">RGB: 
+              <input id="rgbInput" class="editable-input" value="78, 166, 255" />
+            </div>
+          </div>
+        </div>
+        <div id="preview" class="big-preview" style="margin-top:12px;background:#4ea6ff"></div>
+        <div id="gamutWarn" class="warn" style="display:none;margin-top:12px">Некоторые компоненты <span class="kbd">RGB</span> оказались вне диапазона 0–255 при пересчёте из другой модели. Для отображения на экране они <strong>обрезаны</strong>. Это обычная ситуация при переходе из <span class="kbd">XYZ/Lab</span> к sRGB.</div>
+      </div>
+
+      <div class="card">
+        <div class="panel-title">Управление</div>
+        <div class="toolbar">
+          <span class="muted">Режим ввода:</span>
+          <button data-mode="sliders" class="modeBtn">Ползунки</button>
+          <button data-mode="numbers" class="modeBtn">Точные значения</button>
+          <button id="resetBtn">Сбросить</button>
+        </div>
+        <div class="foot mini">Диапазоны: XYZ (0–100 для X,Y,Z), Lab (L: 0–100, a: −128..127, b: −128..127), HLS (H: 0–360°, L,S: 0–100%).</div>
+      </div>
+    </div>
+
+    <div class="grid" style="margin-top:16px">
+      <div class="card">
+        <div class="panel-title">XYZ (D65)</div>
+        <div class="fields" id="xyzFields"></div>
+      </div>
+
+      <div class="card">
+        <div class="panel-title">CIELab (D65)</div>
+        <div class="fields" id="labFields"></div>
+      </div>
+
+      <div class="card">
+        <div class="panel-title">HLS (от sRGB)</div>
+        <div class="fields" id="hlsFields"></div>
+      </div>
+
+      <div class="card">
+        <div class="panel-title">Справка (формулы)</div>
+        <div class="mini muted">
+          <p>Используются стандартные формулы преобразований:</p>
+          <ul>
+            <li>sRGB ⇄ XYZ (D65): гамма 2.4: <code>lin = (v≤0.04045) ? v/12.92 : ((v+0.055)/1.055)^2.4</code>, матрицы 3×3 из стандарта IEC 61966-2-1.</li>
+            <li>XYZ ⇄ Lab (D65): <code>f(t)=t^{1/3}</code> при <code>t>0.008856</code>, иначе <code>7.787·t + 16/116</code>. Белая точка: X<sub>n</sub>=95.047, Y<sub>n</sub>=100, Z<sub>n</sub>=108.883.</li>
+            <li>RGB ⇄ HLS: классические формулы из Foley/van Dam и CSS Color Level 4.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="palette" id="colorPalette"></div>
+  </div>
+
+<script>
+(() => {
+  const Xn = 95.047, Yn = 100.000, Zn = 108.883;
+  const initialColor = "#4ea6ff";
+
+  const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const round = (x, p=2) => Number.parseFloat(x).toFixed(p);
+
+  let lock = false;
+  let inputMode = 'sliders';
+
+  function srgbToLinear(u) {
+    return (u <= 0.04045) ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+  }
+  function linearToSrgb(u) {
+    return (u <= 0.0031308) ? 12.92 * u : 1.055 * Math.pow(u, 1/2.4) - 0.055;
+  }
+
+  function rgb255_to_xyz(rgb){
+    const r = srgbToLinear(rgb.r/255);
+    const g = srgbToLinear(rgb.g/255);
+    const b = srgbToLinear(rgb.b/255);
+    const X = (0.4124564*r + 0.3575761*g + 0.1804375*b) * 100;
+    const Y = (0.2126729*r + 0.7151522*g + 0.0721750*b) * 100;
+    const Z = (0.0193339*r + 0.1191920*g + 0.9503041*b) * 100;
+    return {X, Y, Z};
+  }
+
+  function xyz_to_rgb255(xyz){
+    const X = xyz.X/100, Y = xyz.Y/100, Z = xyz.Z/100;
+    let rl =  3.2404542*X + (-1.5371385)*Y + (-0.4985314)*Z;
+    let gl = -0.9692660*X +  1.8760108*Y +  0.0415560*Z;
+    let bl =  0.0556434*X + (-0.2040259)*Y +  1.0572252*Z;
+
+    let clipped = false;
+    [rl, gl, bl] = [rl, gl, bl].map(v=>{
+      if (v < 0 || v > 1) clipped = true;
+      return clamp(v, 0, 1);
+    });
+
+    const r = Math.round(clamp(linearToSrgb(rl),0,1) * 255);
+    const g = Math.round(clamp(linearToSrgb(gl),0,1) * 255);
+    const b = Math.round(clamp(linearToSrgb(bl),0,1) * 255);
+    return {r,g,b, clipped};
+  }
+
+  function fLab(t){
+    return (t > 0.008856) ? Math.cbrt(t) : (7.787*t + 16/116);
+  }
+  function finvLab(t){
+    const t3 = t*t*t;
+    return (t3 > 0.008856) ? t3 : (t - 16/116)/7.787;
+  }
+
+  function xyz_to_lab(X,Y,Z){
+    const fx = fLab(X/Xn), fy = fLab(Y/Yn), fz = fLab(Z/Zn);
+    const L = 116*fy - 16;
+    const a = 500*(fx - fy);
+    const b = 200*(fy - fz);
+    return {L,a,b};
+  }
+  function lab_to_xyz(L,a,b){
+    const fy = (L + 16)/116;
+    const fx = fy + a/500;
+    const fz = fy - b/200;
+    const X = Xn * finvLab(fx);
+    const Y = Yn * finvLab(fy);
+    const Z = Zn * finvLab(fz);
+    return {X,Y,Z};
+  }
+
+  function rgb_to_hls(r,g,b){
+    r/=255; g/=255; b/=255;
+    const max = Math.max(r,g,b), min = Math.min(r,g,b);
+    const L = (max + min)/2;
+    let H,S;
+    if (max === min){ H = 0; S = 0; }
+    else{
+      const d = max - min;
+      S = (L > 0.5) ? d / (2 - max - min) : d / (max + min);
+      switch(max){
+        case r: H = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: H = (b - r) / d + 2; break;
+        case b: H = (r - g) / d + 4; break;
+      }
+      H /= 6;
+    }
+    return {H: H*360, L: L*100, S: S*100};
+  }
+  function hue2rgb(p,q,t){
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1/6) return p + (q-p)*6*t;
+    if (t < 1/2) return q;
+    if (t < 2/3) return p + (q-p)*(2/3 - t)*6;
+    return p;
+  }
+  function hls_to_rgb(H,L,S){
+    H = ((H%360)+360)%360; L/=100; S/=100;
+    let r,g,b;
+    if (S === 0){ r=g=b=L; }
+    else{
+      const q = L < 0.5 ? L*(1+S) : L + S - L*S;
+      const p = 2*L - q;
+      const h = H/360;
+      r = hue2rgb(p,q,h + 1/3);
+      g = hue2rgb(p,q,h);
+      b = hue2rgb(p,q,h - 1/3);
+    }
+    return {r: Math.round(r*255), g: Math.round(g*255), b: Math.round(b*255)};
+  }
+
+  function makeField(container, key, labelText, min, max, step, onInput){
+    const row = document.createElement('div');
+    row.className = 'group';
+
+    const label = document.createElement('label');
+    label.textContent = labelText;
+    label.setAttribute('for', key+"-range");
+
+    const range = document.createElement('input');
+    range.type = 'range'; range.min=min; range.max=max; range.step=step; range.id = key+'-range';
+
+    const num = document.createElement('input');
+    num.type='number'; num.min=min; num.max=max; num.step=step; num.id = key+'-num';
+
+    row.appendChild(label); row.appendChild(range); row.appendChild(num);
+    container.appendChild(row);
+
+    const syncVis = () => {
+      const showRange = inputMode==='sliders';
+      range.style.display = showRange? 'block':'none';
+      num.style.display = showRange? 'none':'block';
+    }
+    syncVis();
+    modeListeners.push(syncVis);
+
+    const handler = (e)=>{
+      if (lock) return;
+      const v = parseFloat((e.target===range? range.value : num.value));
+      range.value = v; num.value = v;
+      onInput(v);
+    };
+    range.addEventListener('input', handler);
+    num.addEventListener('input', handler);
+
+    return {
+      set(v){ range.value = v; num.value = v; },
+      get(){ return parseFloat(range.value); }
+    }
+  }
+
+  const modeListeners = [];
+  function setInputMode(mode){ inputMode = mode; modeListeners.forEach(fn=>fn()); }
+
+  const xyzFields = document.getElementById('xyzFields');
+  const labFields = document.getElementById('labFields');
+  const hlsFields = document.getElementById('hlsFields');
+
+  let XYZ = {X: 24.79, Y: 25.37, Z: 87.35};
+  let LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+  let HLS = rgb_to_hls(...Object.values(xyz_to_rgb255(XYZ)).slice(0,3));
+
+  const xyzUI = {};
+  xyzUI.X = makeField(xyzFields,'X','X',0,100,0.01,(v)=>{XYZ.X=v; updateFrom('XYZ');});
+  xyzUI.Y = makeField(xyzFields,'Y','Y',0,100,0.01,(v)=>{XYZ.Y=v; updateFrom('XYZ');});
+  xyzUI.Z = makeField(xyzFields,'Z','Z',0,100,0.01,(v)=>{XYZ.Z=v; updateFrom('XYZ');});
+
+  const labUI = {};
+  labUI.L = makeField(labFields,'L','L',0,100,0.01,(v)=>{LAB.L=v; updateFrom('LAB');});
+  labUI.a = makeField(labFields,'a','a',-128,127,0.01,(v)=>{LAB.a=v; updateFrom('LAB');});
+  labUI.b = makeField(labFields,'b','b',-128,127,0.01,(v)=>{LAB.b=v; updateFrom('LAB');});
+
+  const hlsUI = {};
+  hlsUI.H = makeField(hlsFields,'H','H°',0,360,0.1,(v)=>{HLS.H=v; updateFrom('HLS');});
+  hlsUI.L = makeField(hlsFields,'HL','L %',0,100,0.1,(v)=>{HLS.L=v; updateFrom('HLS');});
+  hlsUI.S = makeField(hlsFields,'HS','S %',0,100,0.1,(v)=>{HLS.S=v; updateFrom('HLS');});
+
+  const colorHex = document.getElementById('colorHex');
+  const hexInput = document.getElementById('hexInput');
+  const rgbInput = document.getElementById('rgbInput');
+  const gamutWarn = document.getElementById('gamutWarn');
+  const preview = document.getElementById('preview');
+  const copyHexBtn = document.getElementById('copyHex');
+  const resetBtn = document.getElementById('resetBtn');
+
+  copyHexBtn.addEventListener('click', async ()=>{
+    await navigator.clipboard.writeText(hexInput.value);
+    copyHexBtn.textContent = 'Скопировано!';
+    setTimeout(()=>copyHexBtn.textContent='Скопировать',1200);
+  });
+
+  resetBtn.addEventListener('click', ()=>{
+    lock = true;
+    setInputMode('sliders');
+    const rgb = hex_to_rgb(initialColor);
+    XYZ = rgb255_to_xyz(rgb);
+    LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+    HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+    syncAll(rgb);
+    lock = false;
+  });
+
+  document.querySelectorAll('.modeBtn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      setInputMode(btn.dataset.mode);
+    });
+  });
+
+  colorHex.addEventListener('input', ()=>{
+    const rgb = hex_to_rgb(colorHex.value);
+    XYZ = rgb255_to_xyz(rgb);
+    LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+    HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+    syncAll(rgb);
+  });
+
+  hexInput.addEventListener('blur', function() {
+    let hexValue = this.value.trim();
+    if (!hexValue.startsWith('#')) {
+      hexValue = '#' + hexValue;
+    }
+    if (/^#([A-Fa-f0-9]{6}|[A-Fa-f0-9]{3})$/.test(hexValue)) {
+      const rgb = hex_to_rgb(hexValue);
+      XYZ = rgb255_to_xyz(rgb);
+      LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+      HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+      syncAll(rgb);
+    } else {
+      this.value = rgb_to_hex({r: parseInt(rgbInput.value.split(',')[0].trim()), g: parseInt(rgbInput.value.split(',')[1].trim()), b: parseInt(rgbInput.value.split(',')[2].trim())});
+    }
+  });
+
+  hexInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      this.blur();
+    }
+  });
+
+  rgbInput.addEventListener('blur', function() {
+    const rgbValue = this.value.trim();
+    const rgbArray = rgbValue.split(',').map(val => parseInt(val.trim()));
+    if (rgbArray.length === 3 && rgbArray.every(val => !isNaN(val) && val >= 0 && val <= 255)) {
+      const rgb = {r: rgbArray[0], g: rgbArray[1], b: rgbArray[2]};
+      XYZ = rgb255_to_xyz(rgb);
+      LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+      HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+      syncAll(rgb);
+    } else {
+      const currentRgb = hex_to_rgb(hexInput.value);
+      this.value = `${currentRgb.r}, ${currentRgb.g}, ${currentRgb.b}`;
+    }
+  });
+
+  rgbInput.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      this.blur();
+    }
+  });
+
+  function componentToHex(c){ const s = c.toString(16).toUpperCase(); return s.length===1?'0'+s:s; }
+  function rgb_to_hex({r,g,b}){ return '#'+componentToHex(r)+componentToHex(g)+componentToHex(b); }
+  function hex_to_rgb(hex){ hex = hex.replace('#',''); return {r:parseInt(hex.slice(0,2),16), g:parseInt(hex.slice(2,4),16), b:parseInt(hex.slice(4,6),16)} }
+
+  function syncAll(rgb){
+    lock = true;
+    xyzUI.X.set(round(XYZ.X, 3));
+    xyzUI.Y.set(round(XYZ.Y, 3));
+    xyzUI.Z.set(round(XYZ.Z, 3));
+
+    labUI.L.set(round(LAB.L, 3));
+    labUI.a.set(round(LAB.a, 3));
+    labUI.b.set(round(LAB.b, 3));
+
+    hlsUI.H.set(round(HLS.H, 2));
+    hlsUI.L.set(round(HLS.L, 2));
+    hlsUI.S.set(round(HLS.S, 2));
+
+    const hex = rgb_to_hex(rgb);
+    preview.style.background = hex;
+    colorHex.value = hex;
+    hexInput.value = hex.toUpperCase();
+    rgbInput.value = `${rgb.r}, ${rgb.g}, ${rgb.b}`;
+    lock = false;
+  }
+
+  function updateFrom(source){
+    if (lock) return; lock = true;
+    let rgb, clip=false;
+    if (source === 'XYZ'){
+      LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+      const rr = xyz_to_rgb255(XYZ); clip = rr.clipped; rgb = rr;
+      HLS = rgb_to_hls(rr.r, rr.g, rr.b);
+    } else if (source === 'LAB'){
+      XYZ = lab_to_xyz(LAB.L, LAB.a, LAB.b);
+      const rr = xyz_to_rgb255(XYZ); clip = rr.clipped; rgb = rr;
+      HLS = rgb_to_hls(rr.r, rr.g, rr.b);
+    } else if (source === 'HLS'){
+      rgb = hls_to_rgb(HLS.H, HLS.L, HLS.S);
+      XYZ = rgb255_to_xyz(rgb);
+      LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+    }
+
+    gamutWarn.style.display = clip ? 'block' : 'none';
+    lock = false;
+    syncAll(rgb);
+  }
+
+  function generatePalette() {
+    const palette = document.getElementById('colorPalette');
+    palette.innerHTML = '';
+    
+    const colors = [];
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < 20; col++) {
+        const hue = (col / 20) * 360;
+        const saturation = 80 + (row % 3) * 10;
+        const lightness = 30 + Math.floor(row / 2) * 15;
+        
+        colors.push(`hsl(${hue}, ${saturation}%, ${lightness}%)`);
+      }
+    }
+
+    colors.forEach((color, index) => {
+      const colorDiv = document.createElement('div');
+      colorDiv.style.backgroundColor = color;
+      
+      colorDiv.addEventListener('click', function() {
+        const rgb = hls_to_rgb(
+          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[1]),
+          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[3]),
+          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[2])
+        );
+        
+        XYZ = rgb255_to_xyz(rgb);
+        LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+        HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+        syncAll(rgb);
+      });
+      
+      palette.appendChild(colorDiv);
+    });
+  }
+
+  (function init(){
+    const rgb = hex_to_rgb(initialColor);
+    XYZ = rgb255_to_xyz(rgb);
+    LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
+    HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+    syncAll(rgb);
+    
+    generatePalette();
+  })();
+})();
+</script>
+</body>
+</html>

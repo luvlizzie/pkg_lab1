@@ -3,110 +3,150 @@
   const initialColor = "#4ea6ff";
 
   const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
-  const round = (x, p=2) => Number.parseFloat(x).toFixed(p);
+  const round = (x, p = 3) => Math.round(x * Math.pow(10, p)) / Math.pow(10, p);
 
   let lock = false;
   let inputMode = 'sliders';
 
-  function srgbToLinear(u) {
-    return (u <= 0.04045) ? u / 12.92 : Math.pow((u + 0.055) / 1.055, 2.4);
+  function F_forward(x) {
+    return (x >= 0.04045) ? Math.pow((x + 0.055) / 1.055, 2.4) : x / 12.92;
   }
-  function linearToSrgb(u) {
-    return (u <= 0.0031308) ? 12.92 * u : 1.055 * Math.pow(u, 1/2.4) - 0.055;
+
+  function F_reverse(x) {
+    return (x >= 0.0031308) ? 1.055 * Math.pow(x, 1/2.4) - 0.055 : 12.92 * x;
   }
 
   function rgb255_to_xyz(rgb){
-    const r = srgbToLinear(rgb.r/255);
-    const g = srgbToLinear(rgb.g/255);
-    const b = srgbToLinear(rgb.b/255);
-    const X = (0.4124564*r + 0.3575761*g + 0.1804375*b) * 100;
-    const Y = (0.2126729*r + 0.7151522*g + 0.0721750*b) * 100;
-    const Z = (0.0193339*r + 0.1191920*g + 0.9503041*b) * 100;
+    const Rn = F_forward(rgb.r / 255) * 100;
+    const Gn = F_forward(rgb.g / 255) * 100;
+    const Bn = F_forward(rgb.b / 255) * 100;
+
+    const X = 0.412453 * Rn + 0.357580 * Gn + 0.180423 * Bn;
+    const Y = 0.212671 * Rn + 0.715160 * Gn + 0.072169 * Bn;
+    const Z = 0.019334 * Rn + 0.119193 * Gn + 0.950227 * Bn;
+    
     return {X, Y, Z};
   }
 
   function xyz_to_rgb255(xyz){
-    const X = xyz.X/100, Y = xyz.Y/100, Z = xyz.Z/100;
-    let rl =  3.2404542*X + (-1.5371385)*Y + (-0.4985314)*Z;
-    let gl = -0.9692660*X +  1.8760108*Y +  0.0415560*Z;
-    let bl =  0.0556434*X + (-0.2040259)*Y +  1.0572252*Z;
+    const X = xyz.X / 100;
+    const Y = xyz.Y / 100;
+    const Z = xyz.Z / 100;
+
+    const Rn = 3.2406 * X + (-1.5372) * Y + (-0.4986) * Z;
+    const Gn = (-0.9689) * X + 1.8758 * Y + 0.0415 * Z;
+    const Bn = 0.0557 * X + (-0.2040) * Y + 1.0570 * Z;
 
     let clipped = false;
-    [rl, gl, bl] = [rl, gl, bl].map(v=>{
+    const [rLinear, gLinear, bLinear] = [Rn, Gn, Bn].map(v => {
       if (v < 0 || v > 1) clipped = true;
       return clamp(v, 0, 1);
     });
 
-    const r = Math.round(clamp(linearToSrgb(rl),0,1) * 255);
-    const g = Math.round(clamp(linearToSrgb(gl),0,1) * 255);
-    const b = Math.round(clamp(linearToSrgb(bl),0,1) * 255);
-    return {r,g,b, clipped};
+    const r = Math.round(F_reverse(rLinear) * 255);
+    const g = Math.round(F_reverse(gLinear) * 255);
+    const b = Math.round(F_reverse(bLinear) * 255);
+    
+    return {
+      r: clamp(r, 0, 255),
+      g: clamp(g, 0, 255),
+      b: clamp(b, 0, 255),
+      clipped
+    };
   }
 
   function fLab(t){
-    return (t > 0.008856) ? Math.cbrt(t) : (7.787*t + 16/116);
+    return (t > 0.008856451679) ? Math.cbrt(t) : (7.787037037 * t + 16/116);
   }
   function finvLab(t){
-    const t3 = t*t*t;
-    return (t3 > 0.008856) ? t3 : (t - 16/116)/7.787;
+    const t3 = t * t * t;
+    return (t3 > 0.008856451679) ? t3 : (t - 16/116) / 7.787037037;
   }
 
-  function xyz_to_lab(X,Y,Z){
-    const fx = fLab(X/Xn), fy = fLab(Y/Yn), fz = fLab(Z/Zn);
-    const L = 116*fy - 16;
-    const a = 500*(fx - fy);
-    const b = 200*(fy - fz);
-    return {L,a,b};
+  function xyz_to_lab(X, Y, Z){
+    const fx = fLab(X/Xn);
+    const fy = fLab(Y/Yn);
+    const fz = fLab(Z/Zn);
+    const L = 116 * fy - 16;
+    const a = 500 * (fx - fy);
+    const b = 200 * (fy - fz);
+    return {L, a, b};
   }
-  function lab_to_xyz(L,a,b){
-    const fy = (L + 16)/116;
-    const fx = fy + a/500;
-    const fz = fy - b/200;
+
+  function lab_to_xyz(L, a, b){
+    const fy = (L + 16) / 116;
+    const fx = fy + a / 500;
+    const fz = fy - b / 200;
     const X = Xn * finvLab(fx);
     const Y = Yn * finvLab(fy);
     const Z = Zn * finvLab(fz);
-    return {X,Y,Z};
+    return {X, Y, Z};
   }
 
-  function rgb_to_hls(r,g,b){
-    r/=255; g/=255; b/=255;
-    const max = Math.max(r,g,b), min = Math.min(r,g,b);
-    const L = (max + min)/2;
-    let H,S;
-    if (max === min){ H = 0; S = 0; }
-    else{
-      const d = max - min;
-      S = (L > 0.5) ? d / (2 - max - min) : d / (max + min);
-      switch(max){
-        case r: H = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: H = (b - r) / d + 2; break;
-        case b: H = (r - g) / d + 4; break;
+  function rgb_to_hsl(r, g, b) {
+    r /= 255;
+    g /= 255;
+    b /= 255;
+    
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h, s, l = (max + min) / 2;
+
+    const d = max - min;
+    
+    if (max === min) {
+      h = s = 0;
+    } else {
+      s = d / (1 - Math.abs(2 * l - 1));
+      
+      switch (max) {
+        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+        case g: h = (b - r) / d + 2; break;
+        case b: h = (r - g) / d + 4; break;
       }
-      H /= 6;
+      h /= 6;
     }
-    return {H: H*360, L: L*100, S: S*100};
+
+    return {
+      H: h * 360,
+      S: s * 100,
+      L: l * 100
+    };
   }
-  function hue2rgb(p,q,t){
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1/6) return p + (q-p)*6*t;
-    if (t < 1/2) return q;
-    if (t < 2/3) return p + (q-p)*(2/3 - t)*6;
-    return p;
-  }
-  function hls_to_rgb(H,L,S){
-    H = ((H%360)+360)%360; L/=100; S/=100;
-    let r,g,b;
-    if (S === 0){ r=g=b=L; }
-    else{
-      const q = L < 0.5 ? L*(1+S) : L + S - L*S;
-      const p = 2*L - q;
-      const h = H/360;
-      r = hue2rgb(p,q,h + 1/3);
-      g = hue2rgb(p,q,h);
-      b = hue2rgb(p,q,h - 1/3);
+
+  function hsl_to_rgb(h, s, l) {
+    h = h % 360;
+    if (h < 0) h += 360;
+    s = s / 100;
+    l = l / 100;
+    
+    if (s === 0) {
+      const value = Math.round(l * 255);
+      return {r: value, g: value, b: value};
     }
-    return {r: Math.round(r*255), g: Math.round(g*255), b: Math.round(b*255)};
+    
+    const hue2rgb = (p, q, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1/6) return p + (q - p) * 6 * t;
+      if (t < 1/2) return q;
+      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+      return p;
+    };
+
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    const hNormalized = h / 360;
+    
+    const r = hue2rgb(p, q, hNormalized + 1/3);
+    const g = hue2rgb(p, q, hNormalized);
+    const b = hue2rgb(p, q, hNormalized - 1/3);
+    
+    return {
+      r: Math.round(clamp(r, 0, 1) * 255),
+      g: Math.round(clamp(g, 0, 1) * 255),
+      b: Math.round(clamp(b, 0, 1) * 255)
+    };
   }
 
   function makeField(container, key, labelText, min, max, step, onInput){
@@ -154,26 +194,26 @@
 
   const xyzFields = document.getElementById('xyzFields');
   const labFields = document.getElementById('labFields');
-  const hlsFields = document.getElementById('hlsFields');
+  const hslFields = document.getElementById('hlsFields');
 
-  let XYZ = {X: 24.79, Y: 25.37, Z: 87.35};
+  let XYZ = {X: 23, Y: 52.6, Z: 18.22};
   let LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-  let HLS = rgb_to_hls(...Object.values(xyz_to_rgb255(XYZ)).slice(0,3));
+  let HSL = rgb_to_hsl(...Object.values(xyz_to_rgb255(XYZ)).slice(0,3));
 
   const xyzUI = {};
-  xyzUI.X = makeField(xyzFields,'X','X',0,100,0.01,(v)=>{XYZ.X=v; updateFrom('XYZ');});
-  xyzUI.Y = makeField(xyzFields,'Y','Y',0,100,0.01,(v)=>{XYZ.Y=v; updateFrom('XYZ');});
-  xyzUI.Z = makeField(xyzFields,'Z','Z',0,100,0.01,(v)=>{XYZ.Z=v; updateFrom('XYZ');});
+  xyzUI.X = makeField(xyzFields,'X','X',0,100,0.001,(v)=>{XYZ.X=v; updateFrom('XYZ');});
+  xyzUI.Y = makeField(xyzFields,'Y','Y',0,100,0.001,(v)=>{XYZ.Y=v; updateFrom('XYZ');});
+  xyzUI.Z = makeField(xyzFields,'Z','Z',0,100,0.001,(v)=>{XYZ.Z=v; updateFrom('XYZ');});
 
   const labUI = {};
-  labUI.L = makeField(labFields,'L','L',0,100,0.01,(v)=>{LAB.L=v; updateFrom('LAB');});
-  labUI.a = makeField(labFields,'a','a',-128,127,0.01,(v)=>{LAB.a=v; updateFrom('LAB');});
-  labUI.b = makeField(labFields,'b','b',-128,127,0.01,(v)=>{LAB.b=v; updateFrom('LAB');});
+  labUI.L = makeField(labFields,'L','L',0,100,0.001,(v)=>{LAB.L=v; updateFrom('LAB');});
+  labUI.a = makeField(labFields,'a','a',-128,127,0.001,(v)=>{LAB.a=v; updateFrom('LAB');});
+  labUI.b = makeField(labFields,'b','b',-128,127,0.001,(v)=>{LAB.b=v; updateFrom('LAB');});
 
-  const hlsUI = {};
-  hlsUI.H = makeField(hlsFields,'H','H°',0,360,0.1,(v)=>{HLS.H=v; updateFrom('HLS');});
-  hlsUI.L = makeField(hlsFields,'HL','L %',0,100,0.1,(v)=>{HLS.L=v; updateFrom('HLS');});
-  hlsUI.S = makeField(hlsFields,'HS','S %',0,100,0.1,(v)=>{HLS.S=v; updateFrom('HLS');});
+  const hslUI = {};
+  hslUI.H = makeField(hslFields,'H','H°',0,360,0.1,(v)=>{HSL.H=v; updateFrom('HSL');});
+  hslUI.S = makeField(hslFields,'S','S %',0,100,0.1,(v)=>{HSL.S=v; updateFrom('HSL');});
+  hslUI.L = makeField(hslFields,'L','L %',0,100,0.1,(v)=>{HSL.L=v; updateFrom('HSL');});
 
   const colorHex = document.getElementById('colorHex');
   const hexInput = document.getElementById('hexInput');
@@ -195,7 +235,7 @@
     const rgb = hex_to_rgb(initialColor);
     XYZ = rgb255_to_xyz(rgb);
     LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-    HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+    HSL = rgb_to_hsl(rgb.r, rgb.g, rgb.b);
     syncAll(rgb);
     lock = false;
   });
@@ -210,7 +250,7 @@
     const rgb = hex_to_rgb(colorHex.value);
     XYZ = rgb255_to_xyz(rgb);
     LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-    HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+    HSL = rgb_to_hsl(rgb.r, rgb.g, rgb.b);
     syncAll(rgb);
   });
 
@@ -223,7 +263,7 @@
       const rgb = hex_to_rgb(hexValue);
       XYZ = rgb255_to_xyz(rgb);
       LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-      HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+      HSL = rgb_to_hsl(rgb.r, rgb.g, rgb.b);
       syncAll(rgb);
     } else {
       this.value = rgb_to_hex({r: parseInt(rgbInput.value.split(',')[0].trim()), g: parseInt(rgbInput.value.split(',')[1].trim()), b: parseInt(rgbInput.value.split(',')[2].trim())});
@@ -243,7 +283,7 @@
       const rgb = {r: rgbArray[0], g: rgbArray[1], b: rgbArray[2]};
       XYZ = rgb255_to_xyz(rgb);
       LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-      HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+      HSL = rgb_to_hsl(rgb.r, rgb.g, rgb.b);
       syncAll(rgb);
     } else {
       const currentRgb = hex_to_rgb(hexInput.value);
@@ -263,6 +303,7 @@
 
   function syncAll(rgb){
     lock = true;
+    
     xyzUI.X.set(round(XYZ.X, 3));
     xyzUI.Y.set(round(XYZ.Y, 3));
     xyzUI.Z.set(round(XYZ.Z, 3));
@@ -271,9 +312,9 @@
     labUI.a.set(round(LAB.a, 3));
     labUI.b.set(round(LAB.b, 3));
 
-    hlsUI.H.set(round(HLS.H, 2));
-    hlsUI.L.set(round(HLS.L, 2));
-    hlsUI.S.set(round(HLS.S, 2));
+    hslUI.H.set(round(HSL.H, 3));
+    hslUI.S.set(round(HSL.S, 3));
+    hslUI.L.set(round(HSL.L, 3));
 
     const hex = rgb_to_hex(rgb);
     preview.style.background = hex;
@@ -284,18 +325,25 @@
   }
 
   function updateFrom(source){
-    if (lock) return; lock = true;
-    let rgb, clip=false;
+    if (lock) return; 
+    lock = true;
+    
+    let rgb, clip = false;
+    
     if (source === 'XYZ'){
       LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-      const rr = xyz_to_rgb255(XYZ); clip = rr.clipped; rgb = rr;
-      HLS = rgb_to_hls(rr.r, rr.g, rr.b);
+      const rr = xyz_to_rgb255(XYZ); 
+      clip = rr.clipped; 
+      rgb = rr;
+      HSL = rgb_to_hsl(rr.r, rr.g, rr.b);
     } else if (source === 'LAB'){
       XYZ = lab_to_xyz(LAB.L, LAB.a, LAB.b);
-      const rr = xyz_to_rgb255(XYZ); clip = rr.clipped; rgb = rr;
-      HLS = rgb_to_hls(rr.r, rr.g, rr.b);
-    } else if (source === 'HLS'){
-      rgb = hls_to_rgb(HLS.H, HLS.L, HLS.S);
+      const rr = xyz_to_rgb255(XYZ); 
+      clip = rr.clipped; 
+      rgb = rr;
+      HSL = rgb_to_hsl(rr.r, rr.g, rr.b);
+    } else if (source === 'HSL'){
+      rgb = hsl_to_rgb(HSL.H, HSL.S, HSL.L);
       XYZ = rgb255_to_xyz(rgb);
       LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
     }
@@ -325,15 +373,15 @@
       colorDiv.style.backgroundColor = color;
       
       colorDiv.addEventListener('click', function() {
-        const rgb = hls_to_rgb(
+        const rgb = hsl_to_rgb(
           parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[1]),
-          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[3]),
-          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[2])
+          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[2]),
+          parseInt(color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/)[3])
         );
         
         XYZ = rgb255_to_xyz(rgb);
         LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-        HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+        HSL = rgb_to_hsl(rgb.r, rgb.g, rgb.b);
         syncAll(rgb);
       });
       
@@ -345,7 +393,7 @@
     const rgb = hex_to_rgb(initialColor);
     XYZ = rgb255_to_xyz(rgb);
     LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-    HLS = rgb_to_hls(rgb.r, rgb.g, rgb.b);
+    HSL = rgb_to_hsl(rgb.r, rgb.g, rgb.b);
     syncAll(rgb);
     
     generatePalette();

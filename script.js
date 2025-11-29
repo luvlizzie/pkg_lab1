@@ -8,44 +8,36 @@
   let lock = false;
   let inputMode = 'sliders';
 
-  function F_forward(x) {
-    return (x >= 0.04045) ? Math.pow((x + 0.055) / 1.055, 2.4) : x / 12.92;
-  }
-
-  function F_reverse(x) {
-    return (x >= 0.0031308) ? 1.055 * Math.pow(x, 1/2.4) - 0.055 : 12.92 * x;
-  }
-
-  function rgb255_to_xyz(rgb){
-    const Rn = F_forward(rgb.r / 255) * 100;
-    const Gn = F_forward(rgb.g / 255) * 100;
-    const Bn = F_forward(rgb.b / 255) * 100;
-
-    const X = 0.412453 * Rn + 0.357580 * Gn + 0.180423 * Bn;
-    const Y = 0.212671 * Rn + 0.715160 * Gn + 0.072169 * Bn;
-    const Z = 0.019334 * Rn + 0.119193 * Gn + 0.950227 * Bn;
-    
-    return {X, Y, Z};
-  }
-
   function xyz_to_rgb255(xyz){
-    const X = xyz.X / 100;
-    const Y = xyz.Y / 100;
-    const Z = xyz.Z / 100;
+    const var_X = xyz.X / 100;
+    const var_Y = xyz.Y / 100;
+    const var_Z = xyz.Z / 100;
 
-    const Rn = 3.2406 * X + (-1.5372) * Y + (-0.4986) * Z;
-    const Gn = (-0.9689) * X + 1.8758 * Y + 0.0415 * Z;
-    const Bn = 0.0557 * X + (-0.2040) * Y + 1.0570 * Z;
+    const var_R = var_X * 3.2406 + var_Y * -1.5372 + var_Z * -0.4986;
+    const var_G = var_X * -0.9689 + var_Y * 1.8758 + var_Z * 0.0415;
+    const var_B = var_X * 0.0557 + var_Y * -0.2040 + var_Z * 1.0570;
+
+    const gammaCorrect = (v) => {
+      if (v > 0.0031308) {
+        return 1.055 * Math.pow(v, 1/2.4) - 0.055;
+      } else {
+        return 12.92 * v;
+      }
+    };
 
     let clipped = false;
-    const [rLinear, gLinear, bLinear] = [Rn, Gn, Bn].map(v => {
-      if (v < 0 || v > 1) clipped = true;
-      return clamp(v, 0, 1);
-    });
+    
+    const rLinear = gammaCorrect(clamp(var_R, 0, 1));
+    const gLinear = gammaCorrect(clamp(var_G, 0, 1));
+    const bLinear = gammaCorrect(clamp(var_B, 0, 1));
 
-    const r = Math.round(F_reverse(rLinear) * 255);
-    const g = Math.round(F_reverse(gLinear) * 255);
-    const b = Math.round(F_reverse(bLinear) * 255);
+    if (var_R < 0 || var_R > 1 || var_G < 0 || var_G > 1 || var_B < 0 || var_B > 1) {
+      clipped = true;
+    }
+
+    const r = Math.round(rLinear * 255);
+    const g = Math.round(gLinear * 255);
+    const b = Math.round(bLinear * 255);
     
     return {
       r: clamp(r, 0, 255),
@@ -55,97 +47,154 @@
     };
   }
 
-  function fLab(t){
-    return (t > 0.008856451679) ? Math.cbrt(t) : (7.787037037 * t + 16/116);
-  }
-  function finvLab(t){
-    const t3 = t * t * t;
-    return (t3 > 0.008856451679) ? t3 : (t - 16/116) / 7.787037037;
+  function rgb255_to_xyz(rgb){
+    const linearize = (v) => {
+      const normalized = v / 255;
+      if (normalized > 0.04045) {
+        return Math.pow((normalized + 0.055) / 1.055, 2.4);
+      } else {
+        return normalized / 12.92;
+      }
+    };
+
+    const var_R = linearize(rgb.r);
+    const var_G = linearize(rgb.g);
+    const var_B = linearize(rgb.b);
+
+    const var_R_100 = var_R * 100;
+    const var_G_100 = var_G * 100;
+    const var_B_100 = var_B * 100;
+
+    const X = var_R_100 * 0.4124 + var_G_100 * 0.3576 + var_B_100 * 0.1805;
+    const Y = var_R_100 * 0.2126 + var_G_100 * 0.7152 + var_B_100 * 0.0722;
+    const Z = var_R_100 * 0.0193 + var_G_100 * 0.1192 + var_B_100 * 0.9505;
+    
+    return {X, Y, Z};
   }
 
   function xyz_to_lab(X, Y, Z){
-    const fx = fLab(X/Xn);
-    const fy = fLab(Y/Yn);
-    const fz = fLab(Z/Zn);
+    const var_X = X / Xn;
+    const var_Y = Y / Yn;
+    const var_Z = Z / Zn;
+
+    const f = (t) => {
+      if (t > 0.008856) {
+        return Math.pow(t, 1/3);
+      } else {
+        return (7.787 * t) + (16 / 116);
+      }
+    };
+
+    const fx = f(var_X);
+    const fy = f(var_Y);
+    const fz = f(var_Z);
+
     const L = 116 * fy - 16;
     const a = 500 * (fx - fy);
     const b = 200 * (fy - fz);
+    
     return {L, a, b};
   }
 
   function lab_to_xyz(L, a, b){
-    const fy = (L + 16) / 116;
-    const fx = fy + a / 500;
-    const fz = fy - b / 200;
-    const X = Xn * finvLab(fx);
-    const Y = Yn * finvLab(fy);
-    const Z = Zn * finvLab(fz);
+    const var_Y = (L + 16) / 116;
+    const var_X = a / 500 + var_Y;
+    const var_Z = var_Y - b / 200;
+
+    const f_inv = (t) => {
+      const t3 = Math.pow(t, 3);
+      if (t3 > 0.008856) {
+        return t3;
+      } else {
+        return (t - 16/116) / 7.787;
+      }
+    };
+
+    const X = Xn * f_inv(var_X);
+    const Y = Yn * f_inv(var_Y);
+    const Z = Zn * f_inv(var_Z);
+    
     return {X, Y, Z};
   }
 
   function rgb_to_hsl(r, g, b) {
-    r /= 255;
-    g /= 255;
-    b /= 255;
-    
-    const max = Math.max(r, g, b);
-    const min = Math.min(r, g, b);
-    let h, s, l = (max + min) / 2;
+    const var_R = r / 255;
+    const var_G = g / 255;
+    const var_B = b / 255;
 
-    const d = max - min;
-    
-    if (max === min) {
-      h = s = 0;
+    const var_Min = Math.min(var_R, var_G, var_B);
+    const var_Max = Math.max(var_R, var_G, var_B);
+    const del_Max = var_Max - var_Min;
+
+    const L = (var_Max + var_Min) / 2;
+
+    let H = 0;
+    let S = 0;
+
+    if (del_Max === 0) {
+      H = 0;
+      S = 0;
     } else {
-      s = d / (1 - Math.abs(2 * l - 1));
-      
-      switch (max) {
-        case r: h = (g - b) / d + (g < b ? 6 : 0); break;
-        case g: h = (b - r) / d + 2; break;
-        case b: h = (r - g) / d + 4; break;
+      if (L < 0.5) {
+        S = del_Max / (var_Max + var_Min);
+      } else {
+        S = del_Max / (2 - var_Max - var_Min);
       }
-      h /= 6;
+
+      const del_R = (((var_Max - var_R) / 6) + (del_Max / 2)) / del_Max;
+      const del_G = (((var_Max - var_G) / 6) + (del_Max / 2)) / del_Max;
+      const del_B = (((var_Max - var_B) / 6) + (del_Max / 2)) / del_Max;
+
+      if (var_R === var_Max) {
+        H = del_B - del_G;
+      } else if (var_G === var_Max) {
+        H = (1 / 3) + del_R - del_B;
+      } else if (var_B === var_Max) {
+        H = (2 / 3) + del_G - del_R;
+      }
+
+      if (H < 0) H += 1;
+      if (H > 1) H -= 1;
     }
 
     return {
-      H: h * 360,
-      S: s * 100,
-      L: l * 100
+      H: H * 360,
+      S: S * 100,
+      L: L * 100
     };
   }
 
   function hsl_to_rgb(h, s, l) {
-    h = h % 360;
-    if (h < 0) h += 360;
-    s = s / 100;
-    l = l / 100;
-    
-    if (s === 0) {
-      const value = Math.round(l * 255);
-      return {r: value, g: value, b: value};
-    }
-    
-    const hue2rgb = (p, q, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1/6) return p + (q - p) * 6 * t;
-      if (t < 1/2) return q;
-      if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
-      return p;
-    };
+    let H = h / 360;
+    let S = s / 100;
+    let L = l / 100;
 
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    const hNormalized = h / 360;
-    
-    const r = hue2rgb(p, q, hNormalized + 1/3);
-    const g = hue2rgb(p, q, hNormalized);
-    const b = hue2rgb(p, q, hNormalized - 1/3);
-    
+    let r, g, b;
+
+    if (S === 0) {
+      r = g = b = L;
+    } else {
+      const hue2rgb = (p, q, t) => {
+        if (t < 0) t += 1;
+        if (t > 1) t -= 1;
+        if (t < 1/6) return p + (q - p) * 6 * t;
+        if (t < 1/2) return q;
+        if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+        return p;
+      };
+
+      const q = L < 0.5 ? L * (1 + S) : L + S - L * S;
+      const p = 2 * L - q;
+
+      r = hue2rgb(p, q, H + 1/3);
+      g = hue2rgb(p, q, H);
+      b = hue2rgb(p, q, H - 1/3);
+    }
+
     return {
-      r: Math.round(clamp(r, 0, 1) * 255),
-      g: Math.round(clamp(g, 0, 1) * 255),
-      b: Math.round(clamp(b, 0, 1) * 255)
+      r: Math.round(r * 255),
+      g: Math.round(g * 255),
+      b: Math.round(b * 255)
     };
   }
 
@@ -196,9 +245,9 @@
   const labFields = document.getElementById('labFields');
   const hslFields = document.getElementById('hlsFields');
 
-  let XYZ = {X: 23, Y: 52.6, Z: 18.22};
-  let LAB = xyz_to_lab(XYZ.X, XYZ.Y, XYZ.Z);
-  let HSL = rgb_to_hsl(...Object.values(xyz_to_rgb255(XYZ)).slice(0,3));
+  let XYZ = {X: 0, Y: 0, Z: 0};
+  let LAB = {L: 0, a: 0, b: 0};
+  let HSL = {H: 0, S: 0, L: 0};
 
   const xyzUI = {};
   xyzUI.X = makeField(xyzFields,'X','X',0,100,0.001,(v)=>{XYZ.X=v; updateFrom('XYZ');});
